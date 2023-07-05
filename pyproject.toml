@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "kismet-csv-parser"
+version = "0.1.0"
+description = "A csv parser for kismet files"
+authors = ["anoduck <11767-anoduck@users.noreply.gitgud.io>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "kismet_csv_parser"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+argparse = "^1.4.0"
+pandas = "^2.0.3"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
