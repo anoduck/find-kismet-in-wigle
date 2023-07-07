@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 
 import pandas as pd
-#import time
+from base64 import urlsafe_b64encode
+import json
+import time
 import os
 import sys
 import argparse
+import configparser
+import requests
+from requests.auth import HTTPBasicAuth
+
 
 sys.path.append(os.path.expanduser('~/.local/lib/python3.11'))
 
@@ -54,6 +60,37 @@ def find_match(kisdb, macdb, wigdb, wigout, vendout):
     return True
 
 
+def download_wigle(wigleAPI, wigleToken, lat, lon, dist):
+    rdf = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+    #totalCount = 0
+    creds = wigleAPI + wigleToken
+    creds_bytes = creds.encode('ascii')
+    payload = {'latrange1': lat, 'latrange2': lat, 'longrange1': lon, 'longrange2': lon, 'variance': dist, 'api_key': urlsafe_b64encode(creds_bytes)}
+    results = requests.get(url='https://api.wigle.net/api/v2/network/search', params=payload, auth=HTTPBasicAuth(wigleAPI, wigleToken)).json()
+    for result in results['results']:
+        # totalCount += 1
+        # lat = float(result['trilat'])
+        # lon = float(result['trilong'])
+        # #drop marker for each point
+        # data = ""
+        # data += result['ssid'] + ","
+        # data += result['netid'] + ","
+        # data += result['encryption'] + ","
+        # data += str(result['channel']) + ","
+        # data += result['lastupdt']
+        rname = result['ssid']
+        rmac = result['netid']
+        renc = result['encryption']
+        rchan = result['channel']
+        rtime = result['lastupdt']
+        rdf.loc[len(rdf.index)] = [rname, rmac, renc, rchan, rtime]
+    ftime = time.time()
+    time_str = str(ftime).split('.')
+    filename = "wigle_results-" + time_str[0] + '.csv'
+    rdf.to_csv(filename, sep=',', encoding='utf-8')
+    print('Wrote: ' + filename)
+
+
 def header_clean(file):
     with open(file, 'r', newline='\n') as fin:
         data = fin.read().splitlines(True)
@@ -77,6 +114,19 @@ def main():
     """
     Main
     """
+    ## Setup config parser
+    config = configparser.ConfigParser()
+    config_file = "config.ini"
+    if not os.path.exists(config_file):
+        print('Configuration file is missing')
+        exit(1)
+    config.read(config_file)
+    wigleAPI = config['DEFAULT']['wigle_ID']
+    wigleToken = config['DEFAULT']['wigle_Key']
+    lat = config['DEFAULT']['lat']
+    lon = config['DEFAULT']['long']
+    dist = config['DEFAULT']['dist']
+    
     prog = os.path.basename(__file__)
     ##################
     # ArgParse Setup #
@@ -88,6 +138,8 @@ def main():
         epilog='Remember to convert you kismet DB to CSV',
         conflict_handler='resolve')
     # Arguments for argparse
+    ap.add_argument('-p', '--parse', action='store_true',
+                        help='Parse the csv files.')
     ap.add_argument('-k', '--kismet',
                        help='Kismet CSV')
     ap.add_argument('-m', '--macdb',
@@ -104,6 +156,8 @@ def main():
                        help='Add missing headers to wigle file')
     ap.add_argument('-f', '--file',
                        help='File for cleaning')
+    ap.add_argument('-d', '--download', action='store_true',
+                        help='Download wigle db')
 
     ##################
     # parse the args #
@@ -118,14 +172,15 @@ def main():
         wigdb = os.path.expanduser(args.wigle)
     if args.file:
         file = os.path.expanduser(args.file)
-    
+    if args.download:
+        download_wigle(wigleAPI, wigleToken, lat, lon, dist)
     if args.clean:
         header_clean(file)
-    elif args.add:
+    if args.add:
         add_headers(file)
-    else:
-        if find_match(kisdb, macdb, wigdb, args.wigout, args.vendout):
-            print('Results written to: ' + args.wigout + ' AND ' + args.vendout)
+    if args.parse:
+        find_match(kisdb, macdb, wigdb, args.wigout, args.vendout)
+        print('Results written to: ' + args.wigout + ' AND ' + args.vendout)
 
 
 if __name__ == '__main__':
