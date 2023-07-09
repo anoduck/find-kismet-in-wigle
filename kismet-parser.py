@@ -2,7 +2,6 @@
 
 import pandas as pd
 from base64 import urlsafe_b64encode
-import json
 import time
 import os
 import sys
@@ -13,6 +12,7 @@ from requests.auth import HTTPBasicAuth
 
 
 sys.path.append(os.path.expanduser('~/.local/lib/python3.11'))
+masterdb = "master.csv"
 
 def comp_vendor(kis_read, mac_read):
     vendor_found = pd.DataFrame(columns=['Mac Prefix', 'Vendor Name', 'Private', 'Block Type', 'Last Update'])
@@ -37,7 +37,29 @@ def comp_kiswigle(kis_read, wig_read):
     return wigmac_found
 
 
-def find_match(kisdb, macdb, wigdb, wigout, vendout):
+def check_guests(kis_read, masterdb):
+    zero_dict = {'MAC': '00:00:00:00:00:00', 'SSID': '00:00:00:00:00:00',
+                 'AuthMode': 'NONE', 'FirstSeen': '0000-00-00 00:00:00',
+                 'Channel': '0', 'RSSI': '-00', 'CurrentLatitude': '00.000000',
+                 'CurrentLongitude': '-0.000000', 'AltitudeMeters': '0.0',
+                 'AccuracyMeters': '0', 'Type': 'WIFI'}
+    kis_zero = pd.DataFrame(zero_dict, index=[0])
+    if not os.path.exists(masterdb):
+        master_df = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
+                                'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
+                                'AccuracyMeters', 'Type'])
+        master_df = pd.concat([master_df, kis_zero])
+        master_df.to_csv(masterdb, sep='\t', encoding='utf-8')
+    else:
+        master_df = pd.read_csv(masterdb)
+    kis_dups = kis_read.drop_duplicates()
+    for device in kis_dups.itertuples():
+        master_match = master_df.loc[master_df['MAC'].values == device[0]]
+        master_df = pd.concat([master_df, master_match])
+    return kis_dups
+
+
+def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     kis_read = pd.read_csv(kisdb)
     kisc_test = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
                             'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
@@ -52,42 +74,40 @@ def find_match(kisdb, macdb, wigdb, wigout, vendout):
         header_clean(kisdb)
     elif not kis_read.columns.all == kisc_test.columns.all:
         kis_read.columns = ['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI', 'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters', 'AccuracyMeters', 'Type']
-    wig_result = comp_kiswigle(kis_read, wig_read)
+    kis_new = check_guests(kis_read, masterdb)
+    wig_result = comp_kiswigle(kis_new, wig_read)
     mac_read = pd.read_csv(macdb)
-    vend_result = comp_vendor(kis_read, mac_read)
+    vend_result = comp_vendor(kis_new, mac_read)
     wig_result.to_csv(wigout, sep='\t', encoding='utf-8')
     vend_result.to_csv(vendout, sep='\t', encoding='utf-8')
     return True
 
 
 def download_wigle(wigleAPI, wigleToken, lat, lon, dist):
-    rdf = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+    rrdf = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+    names = []
+    macs = []
+    encs = []
+    chans = []
+    times = []
     #totalCount = 0
     creds = wigleAPI + wigleToken
     creds_bytes = creds.encode('ascii')
     payload = {'latrange1': lat, 'latrange2': lat, 'longrange1': lon, 'longrange2': lon, 'variance': dist, 'api_key': urlsafe_b64encode(creds_bytes)}
     results = requests.get(url='https://api.wigle.net/api/v2/network/search', params=payload, auth=HTTPBasicAuth(wigleAPI, wigleToken)).json()
     for result in results['results']:
-        # totalCount += 1
-        # lat = float(result['trilat'])
-        # lon = float(result['trilong'])
-        # #drop marker for each point
-        # data = ""
-        # data += result['ssid'] + ","
-        # data += result['netid'] + ","
-        # data += result['encryption'] + ","
-        # data += str(result['channel']) + ","
-        # data += result['lastupdt']
-        rname = result['ssid']
-        rmac = result['netid']
-        renc = result['encryption']
-        rchan = result['channel']
-        rtime = result['lastupdt']
-        rdf.loc[len(rdf.index)] = [rname, rmac, renc, rchan, rtime]
+        names.append(result['ssid'])
+        macs.append(result['netid'])
+        encs.append(result['encryption'])
+        chans.append(result['channel'])
+        times.append(result['lastupdt'])
+    resdict = { 'NAME': names, 'MAC': macs, 'ENC': encs, 'CHANNEL': chans, 'TIME': times }
+    redf = pd.DataFrame(resdict)
+    rdf = pd.concat([rrdf, redf])
     ftime = time.time()
     time_str = str(ftime).split('.')
     filename = "wigle_results-" + time_str[0] + '.csv'
-    rdf.to_csv(filename, sep=',', encoding='utf-8')
+    rdf.to_csv(filename, sep='\t', encoding='utf-8')
     print('Wrote: ' + filename)
 
 
@@ -179,7 +199,7 @@ def main():
     if args.add:
         add_headers(file)
     if args.parse:
-        find_match(kisdb, macdb, wigdb, args.wigout, args.vendout)
+        find_match(kisdb, macdb, wigdb, args.wigout, args.vendout, masterdb)
         print('Results written to: ' + args.wigout + ' AND ' + args.vendout)
 
 
