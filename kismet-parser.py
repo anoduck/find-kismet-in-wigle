@@ -155,21 +155,21 @@ def main():
     ap = argparse.ArgumentParser(
         prog=prog,
         usage='%(prog)s.py [-p, (-k, -m, -w)] or [(-c, -a), -f)] or (-d)',
-        description='A parser for Kismet to check against Mac and wigle csv'
-        'There are three sets of operations.'
-        '1. Compare the Kismet csv to both the vendor and wigle csv = (-p)'
-        '      This is the main function of this script, and will require you to pass'
-        '      the "-p" flag. "-k" and "-w" are mandatory, and if "-m" is excluded,'
-        '      it will default to the included mac vendor csv file.'
-        '2. Clean a bad header or add a missing header = (-c or -a)'
-        '      This set of operations is mostly depracted, and should be performed'
-        '      automatically for the user. It exists because the wigle csv file'
-        '      includes no heading labels, and the kismet csv included one too many.'
-        '3. Download a fresh csv from wigle.net = (-d)'
-        '      This provides a convenient means to download a fresh csv file from'
-        '      wigle.net. Which if you use this script as intended, will be done'
-        '      often. All important configurations for this operation are kept in'
-        '      the configuration file.',
+        description='A parser for Kismet to check against Mac and wigle csv \n'
+        'There are three sets of operations.\n'
+        '1. Compare the Kismet csv to both the vendor and wigle csv = (-p) \n'
+        '      This is the main function of this script, and will require you to pass \n'
+        '      the "-p" flag. "-k" and "-w" are mandatory, and if "-m" is excluded,\n'
+        '      it will default to the included mac vendor csv file.\n'
+        '2. Clean a bad header or add a missing header = (-c or -a)\n'
+        '      This set of operations is mostly depracted, and should be performed\n'
+        '      automatically for the user. It exists because the wigle csv file\n'
+        '      includes no heading labels, and the kismet csv included one too many.\n'
+        '3. Download a fresh csv from wigle.net = (-d)\n'
+        '      This provides a convenient means to download a fresh csv file from\n'
+        '      wigle.net. Which if you use this script as intended, will be done\n'
+        '      often. All important configurations for this operation are kept in\n'
+        '      the configuration file.\n',
         epilog='Remember to convert your kismet DB to CSV',
         conflict_handler='resolve')
     # Arguments for argparse
