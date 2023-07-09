@@ -8,6 +8,7 @@ import sys
 import argparse
 import configparser
 import requests
+from time import sleep
 from requests.auth import HTTPBasicAuth
 
 
@@ -68,6 +69,7 @@ def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     wigc_test = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
     kis_test_head = pd.DataFrame(columns=['WigleWifi-1.4'])
     if not wig_read.columns.all == wigc_test.columns.all:
+        print('Ooops... Your wigle file is missing its headers... adding them for you...')
         wig_read.columns = ['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME']
     if kis_read.columns[0] == kis_test_head.columns[0]:
         print('Corrupt Header Present... Cleaning...')
@@ -90,7 +92,6 @@ def download_wigle(wigleAPI, wigleToken, lat, lon, dist):
     encs = []
     chans = []
     times = []
-    #totalCount = 0
     creds = wigleAPI + wigleToken
     creds_bytes = creds.encode('ascii')
     payload = {'latrange1': lat, 'latrange2': lat, 'longrange1': lon, 'longrange2': lon, 'variance': dist, 'api_key': urlsafe_b64encode(creds_bytes)}
@@ -134,7 +135,7 @@ def main():
     """
     Main
     """
-    ## Setup config parser
+    # Setup config parser
     config = configparser.ConfigParser()
     config_file = "config.ini"
     if not os.path.exists(config_file):
@@ -146,60 +147,71 @@ def main():
     lat = config['DEFAULT']['lat']
     lon = config['DEFAULT']['long']
     dist = config['DEFAULT']['dist']
-    
+
     prog = os.path.basename(__file__)
     ##################
     # ArgParse Setup #
     ##################
     ap = argparse.ArgumentParser(
         prog=prog,
-        usage='%(prog)s.py (-k, -m, -w) or (-c, -a, -f)',
-        description='A parser for Kismet to check against Mac and wigle csv',
-        epilog='Remember to convert you kismet DB to CSV',
+        usage='%(prog)s.py [-p, (-k, -m, -w)] or [(-c, -a), -f)] or (-d)',
+        description='A parser for Kismet to check against Mac and wigle csv'
+        'There are three sets of operations.'
+        '1. Compare the Kismet csv to both the vendor and wigle csv = (-p)'
+        '      This is the main function of this script, and will require you to pass'
+        '      the "-p" flag. "-k" and "-w" are mandatory, and if "-m" is excluded,'
+        '      it will default to the included mac vendor csv file.'
+        '2. Clean a bad header or add a missing header = (-c or -a)'
+        '      This set of operations is mostly depracted, and should be performed'
+        '      automatically for the user. It exists because the wigle csv file'
+        '      includes no heading labels, and the kismet csv included one too many.'
+        '3. Download a fresh csv from wigle.net = (-d)'
+        '      This provides a convenient means to download a fresh csv file from'
+        '      wigle.net. Which if you use this script as intended, will be done'
+        '      often. All important configurations for this operation are kept in'
+        '      the configuration file.',
+        epilog='Remember to convert your kismet DB to CSV',
         conflict_handler='resolve')
     # Arguments for argparse
     ap.add_argument('-p', '--parse', action='store_true',
-                        help='Parse the csv files.')
+                    help='Parse the csv files.')
     ap.add_argument('-k', '--kismet',
-                       help='Kismet CSV')
+                    help='Kismet CSV')
     ap.add_argument('-m', '--macdb',
-                       help='CSV containing vendor mac addresses')
+                    help='CSV containing vendor mac addresses')
     ap.add_argument('-w', '--wigle',
-                       help='Wigle CSV')
+                    help='Wigle CSV')
     ap.add_argument('-x', '--wigout',
-                        help='Results from wigle')
-    ap.add_argument('-z', '--vendout',
-                        help='Results from vendor')
+                    help='Results from wigle')
+    ap.add_argument('-z', '--vendout', default='mac-vendors-export.csv',
+                    help='Results from vendor')
     ap.add_argument('-c', '--clean', action='store_true',
-                       help='Remove first row')
+                    help='Remove first row')
     ap.add_argument('-a', '--add', action='store_true',
-                       help='Add missing headers to wigle file')
+                    help='Add missing headers to wigle file')
     ap.add_argument('-f', '--file',
-                       help='File for cleaning')
+                    help='File for cleaning')
     ap.add_argument('-d', '--download', action='store_true',
-                        help='Download wigle db')
+                    help='Download wigle db')
 
     ##################
     # parse the args #
     ##################
     args = ap.parse_args()
 
-    if args.kismet:
-        kisdb = os.path.expanduser(args.kismet)
-    if args.macdb:
-        macdb = os.path.expanduser(args.macdb)
-    if args.wigle:
-        wigdb = os.path.expanduser(args.wigle)
-    if args.file:
-        file = os.path.expanduser(args.file)
     if args.download:
         download_wigle(wigleAPI, wigleToken, lat, lon, dist)
     if args.clean:
-        header_clean(file)
+        print('This function is mostly deprecated. Ctrl-C to cancel.')
+        sleep(5)
+        header_clean(args.file)
     if args.add:
-        add_headers(file)
+        print('This function is mostly deprecated. Ctrl-C to cancel.')
+        sleep(5)
+        add_headers(args.file)
     if args.parse:
-        find_match(kisdb, macdb, wigdb, args.wigout, args.vendout, masterdb)
+        find_match(args.kismet, args.macdb, args.wigle, args.wigout,
+                   args.vendout, masterdb)
         print('Results written to: ' + args.wigout + ' AND ' + args.vendout)
 
 
