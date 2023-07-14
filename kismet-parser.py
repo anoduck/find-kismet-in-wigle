@@ -8,7 +8,6 @@ import sys
 import argparse
 import configparser
 import requests
-from time import sleep
 from requests.auth import HTTPBasicAuth
 
 
@@ -17,7 +16,7 @@ masterdb = "master.csv"
 
 def comp_vendor(kis_read, mac_read):
     vendor_found = pd.DataFrame(columns=['Mac Prefix', 'Vendor Name', 'Private', 'Block Type', 'Last Update'])
-    for k2tup in kis_read['kismet.device.base.macaddr'].items():
+    for k2tup in kis_read.itertuples():
         mac_list = str(k2tup[1]).split(':')
         prels = mac_list[:3]
         premac = prels[0] + ':' + prels[1] + ':' + prels[2]
@@ -30,11 +29,37 @@ def comp_vendor(kis_read, mac_read):
 
 def comp_kiswigle(kis_read, wig_read):
     wigmac_found = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    # kis_clean1 = kis_read.drop_duplicates()
-    for k1tup in kis_read['kismet.device.base.macaddr'].items():
-        wig_matches = wig_read.loc[wig_read['MAC'].values == k1tup[1]]
+    for k1tup in kis_read.itertuples():
+        wig_matches = wig_read.loc[wig_read['MAC'].values == k1tup[0]]
         wigmac_found = pd.concat([wigmac_found, wig_matches])
     return wigmac_found
+
+
+def add_zero(kis_read):
+    zero_list = []
+    for x in range(0, len(kis_read.index)):
+        x = '0'
+        zero_list.append(x)
+    return zero_list
+    
+
+def convert_dataframe(kis_read, kis_zero):
+    zero_list = add_zero(kis_read)
+    json_dict = {'MAC': [kis_read['kismet.device.base.macaddr']],
+                 'SSID': [kis_read['kismet.device.base.commonname']],
+                 'AuthMode': [kis_read['kismet.device.base.crypt']],
+                 'FirstSeen': [kis_read['kismet.device.base.first_time']],
+                 'Channel': [kis_read['kismet.device.base.channel']],
+                 'RSSI': [kis_read['kismet.device.base.name']],
+                 'CurrentLatitude': [zero_list],
+                 'CurrentLongitude': [zero_list],
+                 'AltitudeMeters': [zero_list],
+                 'AccuracyMeters': [zero_list],
+                 'Type': [zero_list]
+                 }
+    kis_json = pd.DataFrame(json_dict)
+    kis_csv = pd.concat([kis_zero, kis_json])
+    return kis_csv
 
 
 def check_guests(kis_read, masterdb):
@@ -47,37 +72,33 @@ def check_guests(kis_read, masterdb):
                  'CurrentLongitude': ['-0.000000'], 'AltitudeMeters': ['0.0'],
                  'AccuracyMeters': ['0'], 'Type': ['WIFI']}
     kis_zero = pd.DataFrame(zero_dict)
+    kis_csv = convert_dataframe(kis_read, kis_zero)
     if not os.path.exists(masterdb):
         master_df = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
                                 'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
                                 'AccuracyMeters', 'Type'])
-        master_df = pd.concat([master_df, kis_zero])
+        master_df = pd.concat([master_df, kis_csv])
         master_df.to_csv(masterdb, sep=',', encoding='utf-8', index=False)
     else:
         master_df = pd.read_csv(masterdb)
-    for device in kis_read['kismet.device.base.macaddr'].items():
-        masterdb_mac = master_df['MAC']
-        master_match = master_df.loc[masterdb_mac.values == device[1]]
-        master_df = pd.concat([master_df, master_match])
+    for device in kis_csv.itertuples():
+          master_match = master_df.loc[master_df['MAC'].values == device[0]]
+          master_df = pd.concat([master_df, master_match])
     return kis_read
 
+## -------------------------------------------------------------------------
+## for device in kis_dups.itertuples():
+##      master_match = master_df.loc[master_df['MAC'].values == device[0]]
+##      master_df = pd.concat([master_df, master_match])
+## -------------------------------------------------------------------------
 
 def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     kis_read = pd.read_json(kisdb)
-    # kisc_test = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
-                            # 'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
-                            # 'AccuracyMeters', 'Type'])
     wig_read = pd.read_csv(wigdb)
     wigc_test = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    # kis_test_head = pd.DataFrame(columns=['WigleWifi-1.4'])
     if not wig_read.columns.all == wigc_test.columns.all:
         print('Ooops... Your wigle file is missing its headers... adding them for you...')
         wig_read.columns = ['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME']
-    # if kis_read.columns[0] == kis_test_head.columns[0]:
-        # print('Corrupt Header Present... Cleaning...')
-        # header_clean(kisdb)
-    # elif not kis_read.columns.all == kisc_test.columns.all:
-        # kis_read.columns = ['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI', 'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters', 'AccuracyMeters', 'Type']
     kis_new = check_guests(kis_read, masterdb)
     wig_result = comp_kiswigle(kis_new, wig_read)
     mac_read = pd.read_csv(macdb)
@@ -158,29 +179,42 @@ def main():
     ##################
     ap = argparse.ArgumentParser(
         prog=prog,
+        formatter_class=argparse.RawTextHelpFormatter,
         usage='%(prog)s.py [-p, (-k, -m, -w)] or [(-c, -a), -f)] or (-d)',
         description='A parser for Kismet to check against Mac and wigle csv \n'
-        'There are three sets of operations.\n'
+        '\n'
+        'Before you begin: Convert your kismetdb to a json device dump.\n'
+        '      "kismetdb_device_dump -i $(YOUR_KISMET_FILE).kismet -o $(OUTPUT_FILE).json"\n'
+        '\n'
+        'There are two sets of operations.\n'
+        '\n'
         '1. Compare the Kismet json to both the vendor and wigle csv = (-p) \n'
         '      This is the main function of this script, and will require you to pass \n'
         '      the "-p" flag. "-k" and "-w" are mandatory, and if "-m" is excluded,\n'
         '      it will default to the included mac vendor csv file.\n'
-        '2. Clean a bad header or add a missing header = (-c or -a)\n'
-        '      These functions are completely deprecated, and will be removed. \n'
-        '      They existed because the wigle csv file includes no heading labels \n'
-        '3. Download a fresh csv from wigle.net = (-d)\n'
+        '\n'
+        '2. Download a fresh csv from wigle.net = (-d)\n'
         '      This provides a convenient means to download a fresh csv file from\n'
         '      wigle.net. Which if you use this script as intended, will be done\n'
         '      often. All important configurations for this operation are kept in\n'
-        '      the configuration file.\n',
-        epilog='Remember to convert your kismet DB to device json with "kismetdb_dump_devices"',
+        '      the configuration file.\n'
+        '\n'
+        'Several applications allow downloading, updating, and maintaining a localized\n'
+        'copy of the ieee vendor assigned mac address registry. Which is referred to\n'
+        'as the "oui" database. It is reccommended to use these updated databases instead\n'
+        'of the one found in this repository. BUT, only if it is in csv format.\n'
+        'Both Kismet and Aircrack-NG are two of these applications.\n'
+        '\n'
+        ,
+        epilog='If you find this script useful at all, please be sure to inform me so.\n'
+        'As that way I will give a damn about keeping it maintained. Cheers.',
         conflict_handler='resolve')
     # Arguments for argparse
     ap.add_argument('-p', '--parse', action='store_true',
-                    help='Parse the csv files.')
+                    help='Parse all the files and search for matching mac addresses.')
     ap.add_argument('-k', '--kismet',
                     help='Kismet Device Json')
-    ap.add_argument('-m', '--macdb', default=vendor_db,
+    ap.add_argument('-m', '--macdb', default=vendor_db, action='extend',
                     help='CSV containing vendor mac addresses')
     ap.add_argument('-w', '--wigle',
                     help='Wigle CSV')
@@ -188,12 +222,6 @@ def main():
                     help='Results from wigle')
     ap.add_argument('-z', '--vendout',
                     help='Results from vendor')
-    ap.add_argument('-c', '--clean', action='store_true',
-                    help='Remove first row')
-    ap.add_argument('-a', '--add', action='store_true',
-                    help='Add missing headers to wigle file')
-    ap.add_argument('-f', '--file',
-                    help='File for cleaning')
     ap.add_argument('-d', '--download', action='store_true',
                     help='Download wigle db')
 
@@ -204,14 +232,6 @@ def main():
 
     if args.download:
         download_wigle(wigleAPI, wigleToken, lat, lon, dist)
-    if args.clean:
-        print('This function is mostly deprecated. Ctrl-C to cancel.')
-        sleep(5)
-        header_clean(args.file)
-    if args.add:
-        print('This function is mostly deprecated. Ctrl-C to cancel.')
-        sleep(5)
-        add_headers(args.file)
     if args.parse:
         find_match(args.kismet, args.macdb, args.wigle, args.wigout,
                    args.vendout, masterdb)
