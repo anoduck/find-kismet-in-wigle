@@ -84,6 +84,8 @@ def check_guests(kis_read, masterdb):
     for device in kis_csv.itertuples():
           master_match = master_df.loc[master_df['MAC'].values == device[0]]
           master_df = pd.concat([master_df, master_match])
+    master_df.to_csv(masterdb)
+    print('Added entries to master db')
     return kis_read
 
 ## -------------------------------------------------------------------------
@@ -95,8 +97,11 @@ def check_guests(kis_read, masterdb):
 def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     kis_read = pd.read_json(kisdb)
     wig_read = pd.read_csv(wigdb)
+    wige_test = pd.DataFrame(columns=['Unnamed: 0', 'NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
     wigc_test = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    if not wig_read.columns.all == wigc_test.columns.all:
+    if wig_read.columns.all != wige_test.columns.all:
+        wig_read = pd.read_csv(wigdb, usecols=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+    if wig_read.columns.all != wigc_test.columns.all:
         print('Ooops... Your wigle file is missing its headers... adding them for you...')
         wig_read.columns = ['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME']
     kis_new = check_guests(kis_read, masterdb)
