@@ -27,66 +27,55 @@ def comp_vendor(kis_read, mac_read):
     return vendor_found
 
 
-def comp_kiswigle(kis_read, wig_read):
-    wigmac_found = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+def comp_kiswigle(kis_read, wig_read, wig_clone):
     for k1tup in kis_read.itertuples():
-        wig_matches = wig_read.loc[wig_read['MAC'].values == k1tup[0]]
-        wigmac_found = pd.concat([wigmac_found, wig_matches])
+        wig_matches = wig_read.loc[wig_read['MAC'].values == k1tup[1]]
+        wigmac_found = pd.concat([wig_clone, wig_matches])
     return wigmac_found
 
 
-def add_zero(kis_read):
-    zero_list = []
-    for x in range(0, len(kis_read.index)):
-        x = '0'
-        zero_list.append(x)
-    return zero_list
-    
-
 def convert_dataframe(kis_read, kis_zero):
-    zero_list = add_zero(kis_read)
-    json_dict = {'MAC': [kis_read['kismet.device.base.macaddr']],
-                 'SSID': [kis_read['kismet.device.base.commonname']],
-                 'AuthMode': [kis_read['kismet.device.base.crypt']],
-                 'FirstSeen': [kis_read['kismet.device.base.first_time']],
-                 'Channel': [kis_read['kismet.device.base.channel']],
-                 'RSSI': [kis_read['kismet.device.base.name']],
-                 'CurrentLatitude': [zero_list],
-                 'CurrentLongitude': [zero_list],
-                 'AltitudeMeters': [zero_list],
-                 'AccuracyMeters': [zero_list],
-                 'Type': [zero_list]
-                 }
-    kis_json = pd.DataFrame(json_dict)
-    kis_csv = pd.concat([kis_zero, kis_json])
+    kis_reordered = kis_read.iloc[:,[12,13,4,5,7,11,3,15]]
+    kis_fresh = kis_reordered.rename(columns={kis_reordered.columns[0]: 'MAC',
+                                              kis_reordered.columns[1]: 'Manufacturer',
+                                              kis_reordered.columns[2]: 'CommonName',
+                                              kis_reordered.columns[3]: 'AuthMode',
+                                              kis_reordered.columns[4]: 'FirstSeen',
+                                              kis_reordered.columns[5]: 'LastSeen',
+                                              kis_reordered.columns[6]: 'Channel',
+                                              kis_reordered.columns[7]: 'RSSI'})
+    # Write test file for raw data
+    print('Writing Test File')
+    test_file = os.path.join(os.path.curdir, 'test_file.csv')
+    kis_fresh.to_csv(test_file, sep=',', index=None)
+    kis_csv = pd.concat([kis_zero, kis_fresh])
     return kis_csv
 
 
 def check_guests(kis_read, masterdb):
-    kis_zero = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
-                            'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
-                            'AccuracyMeters', 'Type'])
-    zero_dict = {'MAC': ['00:00:00:00:00:00'], 'SSID': ['00:00:00:00:00:00'],
-                 'AuthMode': ['NONE'], 'FirstSeen': ['0000-00-00 00:00:00'],
-                 'Channel': ['0'], 'RSSI': ['0'], 'CurrentLatitude': ['00.000000'],
-                 'CurrentLongitude': ['-0.000000'], 'AltitudeMeters': ['0.0'],
-                 'AccuracyMeters': ['0'], 'Type': ['WIFI']}
+    kis_zero = pd.DataFrame(columns=['MAC', 'Manufacturer', 'CommonName',
+                                     'AuthMode', 'FirstSeen', 'LastSeen',
+                                     'Channel', 'RSSI'])
+    zero_dict = {'MAC': ['00:00:00:00:00:00'], 'Manufacturer': ['None'],
+                 'CommonName': ['NONE'], 'FirstSeen': ['0000-00-00 00:00:00'],
+                 'LastSeen': ['0000-00-00 00:00:00'], 'Channel': ['0'],
+                 'RSSI': ['0']}
     kis_zero = pd.DataFrame(zero_dict)
     kis_csv = convert_dataframe(kis_read, kis_zero)
     if not os.path.exists(masterdb):
-        master_df = pd.DataFrame(columns=['MAC', 'SSID', 'AuthMode', 'FirstSeen', 'Channel', 'RSSI',
-                                'CurrentLatitude', 'CurrentLongitude', 'AltitudeMeters',
-                                'AccuracyMeters', 'Type'])
+        master_df = pd.DataFrame(columns=['MAC', 'Manufacturer', 'CommonName',
+                                          'AuthMode', 'FirstSeen', 'LastSeen',
+                                          'Channel', 'RSSI'])
         master_df = pd.concat([master_df, kis_csv])
-        master_df.to_csv(masterdb, sep=',', encoding='utf-8', index=False)
+        master_df.to_csv(masterdb, sep=',', encoding='utf-8', index=None)
     else:
         master_df = pd.read_csv(masterdb)
     for device in kis_csv.itertuples():
           master_match = master_df.loc[master_df['MAC'].values == device[0]]
           master_df = pd.concat([master_df, master_match])
-    master_df.to_csv(masterdb)
+    master_df.to_csv(masterdb, sep=',', index=None)
     print('Added entries to master db')
-    return kis_read
+    return kis_csv
 
 ## -------------------------------------------------------------------------
 ## for device in kis_dups.itertuples():
@@ -98,18 +87,18 @@ def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     kis_read = pd.read_json(kisdb)
     wig_read = pd.read_csv(wigdb)
     wige_test = pd.DataFrame(columns=['Unnamed: 0', 'NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    wigc_test = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    if wig_read.columns.all != wige_test.columns.all:
+    wig_clone = pd.DataFrame(columns=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
+    if wig_read.columns.all == wige_test.columns.all:
         wig_read = pd.read_csv(wigdb, usecols=['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME'])
-    if wig_read.columns.all != wigc_test.columns.all:
+    if wig_read.columns[0] != wig_clone.columns[0]:
         print('Ooops... Your wigle file is missing its headers... adding them for you...')
         wig_read.columns = ['NAME', 'MAC', 'ENC', 'CHANNEL', 'TIME']
     kis_new = check_guests(kis_read, masterdb)
-    wig_result = comp_kiswigle(kis_new, wig_read)
+    wig_result = comp_kiswigle(kis_new, wig_read, wig_clone)
     mac_read = pd.read_csv(macdb)
     vend_result = comp_vendor(kis_new, mac_read)
-    wig_result.to_csv(wigout, sep=',', encoding='utf-8', index=False)
-    vend_result.to_csv(vendout, sep=',', encoding='utf-8', index=False)
+    wig_result.to_csv(wigout, sep=',', encoding='utf-8', index=None)
+    vend_result.to_csv(vendout, sep=',', encoding='utf-8', index=None)
     return True
 
 
@@ -136,7 +125,7 @@ def download_wigle(wigleAPI, wigleToken, lat, lon, dist):
     ftime = time.time()
     time_str = str(ftime).split('.')
     filename = "wigle_results-" + time_str[0] + '.csv'
-    rdf.to_csv(filename, sep=',', encoding='utf-8')
+    rdf.to_csv(filename, sep=',', encoding='utf-8', index=None)
     print('Wrote: ' + filename)
 
 
