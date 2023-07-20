@@ -36,7 +36,7 @@ def comp_kiswigle(kis_read, wig_read, wig_clone):
 
 def convert_dataframe(kis_read, kis_zero):
     kis_reordered = kis_read.iloc[:,[12,13,4,5,7,11,3,15]]
-    kis_fresh = kis_reordered.rename(columns={kis_reordered.columns[0]: 'MAC',
+    kis_csv = kis_reordered.rename(columns={kis_reordered.columns[0]: 'MAC',
                                               kis_reordered.columns[1]: 'Manufacturer',
                                               kis_reordered.columns[2]: 'CommonName',
                                               kis_reordered.columns[3]: 'AuthMode',
@@ -44,15 +44,11 @@ def convert_dataframe(kis_read, kis_zero):
                                               kis_reordered.columns[5]: 'LastSeen',
                                               kis_reordered.columns[6]: 'Channel',
                                               kis_reordered.columns[7]: 'RSSI'})
-    # Write test file for raw data
-    print('Writing Test File')
-    test_file = os.path.join(os.path.curdir, 'test_file.csv')
-    kis_fresh.to_csv(test_file, sep=',', index=None)
-    kis_csv = pd.concat([kis_zero, kis_fresh])
     return kis_csv
 
 
 def check_guests(kis_read, masterdb):
+    # Prepare files
     kis_zero = pd.DataFrame(columns=['MAC', 'Manufacturer', 'CommonName',
                                      'AuthMode', 'FirstSeen', 'LastSeen',
                                      'Channel', 'RSSI'])
@@ -62,20 +58,27 @@ def check_guests(kis_read, masterdb):
                  'RSSI': ['0']}
     kis_zero = pd.DataFrame(zero_dict)
     kis_csv = convert_dataframe(kis_read, kis_zero)
+    # Check if masterdb is in path
     if not os.path.exists(masterdb):
         master_df = pd.DataFrame(columns=['MAC', 'Manufacturer', 'CommonName',
                                           'AuthMode', 'FirstSeen', 'LastSeen',
                                           'Channel', 'RSSI'])
         master_df = pd.concat([master_df, kis_csv])
-        master_df.to_csv(masterdb, sep=',', encoding='utf-8', index=None)
     else:
         master_df = pd.read_csv(masterdb)
+    # Add new entries to master.db
     for device in kis_csv.itertuples():
-          master_match = master_df.loc[master_df['MAC'].values == device[0]]
-          master_df = pd.concat([master_df, master_match])
-    master_df.to_csv(masterdb, sep=',', index=None)
+        master_match = master_df.loc[master_df['MAC'].values == device[0]]
+        master_df = pd.concat([master_df, master_match])
+    master_df.to_csv(masterdb, sep=',', index=False)
     print('Added entries to master db')
     return kis_csv
+
+
+def add_master(kisdb, masterdb):
+    kis_read = pd.read_json(kisdb)
+    check_guests(kis_read, masterdb)
+
 
 ## -------------------------------------------------------------------------
 ## for device in kis_dups.itertuples():
@@ -97,8 +100,8 @@ def find_match(kisdb, macdb, wigdb, wigout, vendout, masterdb):
     wig_result = comp_kiswigle(kis_new, wig_read, wig_clone)
     mac_read = pd.read_csv(macdb)
     vend_result = comp_vendor(kis_new, mac_read)
-    wig_result.to_csv(wigout, sep=',', encoding='utf-8', index=None)
-    vend_result.to_csv(vendout, sep=',', encoding='utf-8', index=None)
+    wig_result.to_csv(wigout, sep=',', encoding='utf-8', index=False)
+    vend_result.to_csv(vendout, sep=',', encoding='utf-8', index=False)
     return True
 
 
@@ -125,7 +128,7 @@ def download_wigle(wigleAPI, wigleToken, lat, lon, dist):
     ftime = time.time()
     time_str = str(ftime).split('.')
     filename = "wigle_results-" + time_str[0] + '.csv'
-    rdf.to_csv(filename, sep=',', encoding='utf-8', index=None)
+    rdf.to_csv(filename, sep=',', encoding='utf-8', index=False)
     print('Wrote: ' + filename)
 
 
@@ -180,7 +183,7 @@ def main():
         'Before you begin: Convert your kismetdb to a json device dump.\n'
         '      "kismetdb_device_dump -i $(YOUR_KISMET_FILE).kismet -o $(OUTPUT_FILE).json"\n'
         '\n'
-        'There are two sets of operations.\n'
+        'There are three sets of operations.\n'
         '\n'
         '1. Compare the Kismet json to both the vendor and wigle csv = (-p) \n'
         '      This is the main function of this script, and will require you to pass \n'
@@ -192,6 +195,12 @@ def main():
         '      wigle.net. Which if you use this script as intended, will be done\n'
         '      often. All important configurations for this operation are kept in\n'
         '      the configuration file.\n'
+        '\n'
+        '3. Only new entries to the master database = (-m) \n'
+        '      New entries are added to the master database during the "parse"\n'
+        '      function, along with comparing all three csv files. This just\n'
+        '      performs the former, and is handy for adding entries to the\n'
+        '      master database that have already been parsed.\n'
         '\n'
         'Several applications allow downloading, updating, and maintaining a localized\n'
         'copy of the ieee vendor assigned mac address registry. Which is referred to\n'
@@ -216,6 +225,8 @@ def main():
                     help='Results from wigle')
     ap.add_argument('-z', '--vendout',
                     help='Results from vendor')
+    ap.add_argument('-m', '--master',
+                    help='Only add new entries to the master db.')
     ap.add_argument('-d', '--download', action='store_true',
                     help='Download wigle db')
 
@@ -230,7 +241,9 @@ def main():
         find_match(args.kismet, args.macdb, args.wigle, args.wigout,
                    args.vendout, masterdb)
         print('Results written to: ' + args.wigout + ' AND ' + args.vendout)
-
+    if args.master:
+        add_master(args.kismet, masterdb)
+        print('Entries added to master db')
 
 if __name__ == '__main__':
     main()
