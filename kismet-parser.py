@@ -70,7 +70,8 @@ def check_guests(kis_read, masterdb):
     for device in kis_csv.itertuples():
         master_match = master_df.loc[master_df['MAC'].values == device[0]]
         master_df = pd.concat([master_df, master_match])
-    master_df.to_csv(masterdb, sep=',', index=False)
+    master_write = master_df.drop_duplicates()
+    master_write.to_csv(masterdb, sep=',', index=False)
     print('Added entries to master db')
     return kis_csv
 
